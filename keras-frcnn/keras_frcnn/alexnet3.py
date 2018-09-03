@@ -61,15 +61,16 @@ def nn_base(input_tensor=None, trainable=False):
         bn_axis = 1
 
 	# pretrained alexnet
-    x = Conv2D(96, (11, 11), strides=(4,4), activation='relu', padding='same', name='conv2d_1')(img_input)
+	# use the same kernel_initializer as sina if you use the same data normalization
+    x = Conv2D(96, (11, 11), strides=(4,4), activation='relu', padding='same', name='conv2d_1', kernel_initializer='glorot_normal')(img_input)
     x = MaxPooling2D((2, 2), strides=(2, 2), padding='same', name='max_pooling2d_1')(x)
     x = BatchNormalization()(x)
-    x = Conv2D(256, (11, 11), strides = (1,1), activation='relu', padding='same', name='conv2d_2')(x)
+    x = Conv2D(256, (11, 11), strides = (1,1), activation='relu', padding='same', name='conv2d_2', kernel_initializer='glorot_normal')(x)
     x = MaxPooling2D((2, 2), strides=(2, 2), name='max_pooling2d_2')(x)
     x = BatchNormalization()(x)
-    x = Conv2D(384, (3, 3), activation='relu', padding='same', name='conv2d_3')(x)
-    x = Conv2D(384, (3, 3), activation='relu', padding='same', name='conv2d_4')(x)
-    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv2d_5')(x)
+    x = Conv2D(384, (3, 3), activation='relu', padding='same', name='conv2d_3', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(384, (3, 3), activation='relu', padding='same', name='conv2d_4', kernel_initializer='glorot_normal')(x)
+    x = Conv2D(256, (3, 3), activation='relu', padding='same', name='conv2d_5', kernel_initializer='glorot_normal')(x)
 
     return x
 
@@ -82,7 +83,7 @@ def rpn(base_layers, num_anchors):
 
     return [x_class, x_regr, base_layers]
 
-
+# modify here for different initializer
 def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=False):
 
     # compile times on theano tend to be very high, so we use smaller ROI pooling regions to workaround
@@ -97,9 +98,11 @@ def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=Fal
     out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([base_layers, input_rois])
 
     out = TimeDistributed(Flatten(name='flatten'))(out_roi_pool)
-    out = TimeDistributed(Dense(4096, activation='relu', name='fc1'))(out)
+    #out = TimeDistributed(Dense(4096, activation='relu', name='fc1'))(out)
+    out = TimeDistributed(Dense(4096, activation='relu', name='fc1', kernel_initializer='glorot_normal'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
-    out = TimeDistributed(Dense(4096, activation='relu', name='fc2'))(out)
+    #out = TimeDistributed(Dense(4096, activation='relu', name='fc2'))(out)
+    out = TimeDistributed(Dense(4096, activation='relu', name='fc2', kernel_initializer='glorot_normal'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
 
     out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'), name='dense_class_{}'.format(nb_classes))(out)

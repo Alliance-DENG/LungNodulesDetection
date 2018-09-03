@@ -9,6 +9,9 @@ class Config:
 
 		self.network = 'resnet50'
 
+		# set it true when you use pretrained weights
+		self.Imagenet_pretrained = False
+
 		# setting for data augmentation
 		self.use_horizontal_flips = False
 		self.use_vertical_flips = False

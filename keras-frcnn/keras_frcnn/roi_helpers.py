@@ -220,6 +220,7 @@ def non_max_suppression_fast(boxes, probs, overlap_thresh=0.9, max_boxes=300):
 	return boxes, probs
 
 import time
+# 看懂函数的关键在于理解A的数据结构
 def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=300,overlap_thresh=0.9):
 
 	regr_layer = regr_layer / C.std_scaling
@@ -243,7 +244,7 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
 
 	for anchor_size in anchor_sizes:
 		for anchor_ratio in anchor_ratios:
-
+			# 对其中的某个size某个ratio进行regression
 			anchor_x = (anchor_size * anchor_ratio[0])/C.rpn_stride
 			anchor_y = (anchor_size * anchor_ratio[1])/C.rpn_stride
 			if dim_ordering == 'th':
@@ -251,22 +252,23 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
 			else:
 				regr = regr_layer[0, :, :, 4 * curr_layer:4 * curr_layer + 4]
 				regr = np.transpose(regr, (2, 0, 1))
-
+			# 建立与rpn等大的锚点, 然后填充
 			X, Y = np.meshgrid(np.arange(cols),np. arange(rows))
-
+			# 得到每个anchor对应的坐标, anchor_x是框对应的长边长度
 			A[0, :, :, curr_layer] = X - anchor_x/2
 			A[1, :, :, curr_layer] = Y - anchor_y/2
 			A[2, :, :, curr_layer] = anchor_x
 			A[3, :, :, curr_layer] = anchor_y
-
+			# 进行回归修正
 			if use_regr:
 				A[:, :, :, curr_layer] = apply_regr_np(A[:, :, :, curr_layer], regr)
 
+			# 对修正后的边框一些不合理的地方进行矫正。
+			# 边框回归后的左上角和右下角的点不能超过图片外，框的宽高不可以小于0
 			A[2, :, :, curr_layer] = np.maximum(1, A[2, :, :, curr_layer])
 			A[3, :, :, curr_layer] = np.maximum(1, A[3, :, :, curr_layer])
 			A[2, :, :, curr_layer] += A[0, :, :, curr_layer]
 			A[3, :, :, curr_layer] += A[1, :, :, curr_layer]
-
 			A[0, :, :, curr_layer] = np.maximum(0, A[0, :, :, curr_layer])
 			A[1, :, :, curr_layer] = np.maximum(0, A[1, :, :, curr_layer])
 			A[2, :, :, curr_layer] = np.minimum(cols-1, A[2, :, :, curr_layer])

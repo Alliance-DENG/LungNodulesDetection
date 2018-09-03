@@ -112,7 +112,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 		gta[bbox_num, 3] = bbox['y2'] * (resized_height / float(height))
 	
 	# rpn ground truth
-
+	# 遍历所有可能的宽组合
 	for anchor_size_idx in range(len(anchor_sizes)):
 		for anchor_ratio_idx in range(n_anchratios):
 			anchor_x = anchor_sizes[anchor_size_idx] * anchor_ratios[anchor_ratio_idx][0]
@@ -126,9 +126,8 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 				# ignore boxes that go across image boundaries					
 				if x1_anc < 0 or x2_anc > resized_width:
 					continue
-					
 				for jy in range(output_height):
-
+					# 遍历一种预选框组合下，由锚点衍生出的所有预选框
 					# y-coordinates of the current anchor box
 					y1_anc = downscale * (jy + 0.5) - anchor_y / 2
 					y2_anc = downscale * (jy + 0.5) + anchor_y / 2
@@ -136,30 +135,37 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 					# ignore boxes that go across image boundaries
 					if y1_anc < 0 or y2_anc > resized_height:
 						continue
-
+					# 现在我们确定了一个预选框组合有确定了中心点那就是唯一确定一个框了，
+					# 接下来就是来确定这个框的性质了：是否包含物体、如包含物体其回归梯度是多少
 					# bbox_type indicates whether an anchor should be a target 
 					bbox_type = 'neg'
 
 					# this is the best IOU for the (x,y) coord and the current anchor
 					# note that this is different from the best IOU for a GT bbox
 					best_iou_for_loc = 0.0
-
+					# 要确定以上两个性质，每一个框都需要遍历图中的所有bboxes
 					for bbox_num in range(num_bboxes):
 						
 						# get IOU of the current GT box and the current anchor box
 						curr_iou = iou([gta[bbox_num, 0], gta[bbox_num, 2], gta[bbox_num, 1], gta[bbox_num, 3]], [x1_anc, y1_anc, x2_anc, y2_anc])
 						# calculate the regression targets if they will be needed
+						# 如果现在的交并比curr_iou大于该bbox最好的交并比或者大于给定的阈值则求下列参数，
+						# 这些参数是后来要用的即回归梯度
 						if curr_iou > best_iou_for_bbox[bbox_num] or curr_iou > C.rpn_max_overlap:
 							cx = (gta[bbox_num, 0] + gta[bbox_num, 1]) / 2.0
 							cy = (gta[bbox_num, 2] + gta[bbox_num, 3]) / 2.0
 							cxa = (x1_anc + x2_anc)/2.0
 							cya = (y1_anc + y2_anc)/2.0
-
+							
+							# tx：两个框中心的宽的距离与预选框宽的比
+							# ty:同tx
+							# tw:bbox的宽与预选框宽的比
+							# th:同理
 							tx = (cx - cxa) / (x2_anc - x1_anc)
 							ty = (cy - cya) / (y2_anc - y1_anc)
 							tw = np.log((gta[bbox_num, 1] - gta[bbox_num, 0]) / (x2_anc - x1_anc))
 							th = np.log((gta[bbox_num, 3] - gta[bbox_num, 2]) / (y2_anc - y1_anc))
-						
+						# 如果当前gt框不是背景，那么进行一系列的更新
 						if img_data['bboxes'][bbox_num]['class'] != 'bg':
 
 							# all GT boxes should be mapped to an anchor box, so we keep track of which anchor box was best
@@ -170,10 +176,12 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 								best_dx_for_bbox[bbox_num,:] = [tx, ty, tw, th]
 
 							# we set the anchor to positive if the IOU is >0.7 (it does not matter if there was another better box, it just indicates overlap)
+							# 如果预选框与非背景gt框交并比大于阈值给其打上pos标签(不是类别名称)
 							if curr_iou > C.rpn_max_overlap:
 								bbox_type = 'pos'
 								num_anchors_for_bbox[bbox_num] += 1
 								# we update the regression layer target if this IOU is the best for the current (x,y) and anchor position
+								# 记录有最大交并比为多少和其对应的回归梯度
 								if curr_iou > best_iou_for_loc:
 									best_iou_for_loc = curr_iou
 									best_regr = (tx, ty, tw, th)
@@ -185,6 +193,10 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 								    bbox_type = 'neutral'
 
 					# turn on or off outputs depending on IOUs
+					# 根据候选框标签来决定相应参数
+					# y_is_box_valid：该预选框是否可用（nertual就是不可用的）
+					# y_rpn_overlap：该预选框是否包含物体
+					# y_rpn_regr:回归梯度
 					if bbox_type == 'neg':
 						y_is_box_valid[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 1
 						y_rpn_overlap[jy, ix, anchor_ratio_idx + n_anchratios * anchor_size_idx] = 0
@@ -198,7 +210,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 						y_rpn_regr[jy, ix, start:start+4] = best_regr
 
 	# we ensure that every bbox has at least one positive RPN region
-
+	# 如果有一个bbox没有pos的预选宽和其对应，这找一个与它交并比最高的anchor的设置为pos
 	for idx in range(num_anchors_for_bbox.shape[0]):
 		if num_anchors_for_bbox[idx] == 0:
 			# no box with an IOU greater than zero ...
@@ -213,7 +225,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 			start = 4 * (best_anchor_for_bbox[idx,2] + n_anchratios * best_anchor_for_bbox[idx,3])
 			y_rpn_regr[
 				best_anchor_for_bbox[idx,0], best_anchor_for_bbox[idx,1], start:start+4] = best_dx_for_bbox[idx, :]
-
+	# 将深度变到第一位，给向量增加一个维度
 	y_rpn_overlap = np.transpose(y_rpn_overlap, (2, 0, 1))
 	y_rpn_overlap = np.expand_dims(y_rpn_overlap, axis=0)
 
@@ -222,7 +234,7 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 
 	y_rpn_regr = np.transpose(y_rpn_regr, (2, 0, 1))
 	y_rpn_regr = np.expand_dims(y_rpn_regr, axis=0)
-
+	# 从可用的预选框中选择num_regions
 	pos_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 1, y_is_box_valid[0, :, :, :] == 1))
 	neg_locs = np.where(np.logical_and(y_rpn_overlap[0, :, :, :] == 0, y_is_box_valid[0, :, :, :] == 1))
 
@@ -231,17 +243,18 @@ def calc_rpn(C, img_data, width, height, resized_width, resized_height, img_leng
 	# one issue is that the RPN has many more negative than positive regions, so we turn off some of the negative
 	# regions. We also limit it to 256 regions.
 	num_regions = 256
-
+	# 如果pos的个数大于num_regions / 2，则将多下来的地方置为不可用。如果小于pos不做处理
 	if len(pos_locs[0]) > num_regions/2:
 		val_locs = random.sample(range(len(pos_locs[0])), len(pos_locs[0]) - num_regions/2)
 		y_is_box_valid[0, pos_locs[0][val_locs], pos_locs[1][val_locs], pos_locs[2][val_locs]] = 0
 		num_pos = num_regions/2
-
+	# num_regions剩下的用neg填充
 	if len(neg_locs[0]) + num_pos > num_regions:
 		val_locs = random.sample(range(len(neg_locs[0])), len(neg_locs[0]) - num_pos)
 		y_is_box_valid[0, neg_locs[0][val_locs], neg_locs[1][val_locs], neg_locs[2][val_locs]] = 0
-
+	# y_rpn_cls：是否包含类，其前半段是该anchor是否可用
 	y_rpn_cls = np.concatenate([y_is_box_valid, y_rpn_overlap], axis=1)
+	# y_rpn_regr：回归梯度，前半段包含是否有效
 	y_rpn_regr = np.concatenate([np.repeat(y_rpn_overlap, 4, axis=1), y_rpn_regr], axis=1)
 
 	return np.copy(y_rpn_cls), np.copy(y_rpn_regr)
@@ -308,13 +321,17 @@ def get_anchor_gt(all_img_data, class_count, C, img_length_calc_function, backen
 				#x_img = cv2.resize(x_img, (resized_width, resized_height), interpolation=cv2.INTER_CUBIC)
 				
 				# since np.float32 is not supported in PC-grains2 for resize, I can just do another way to skip it
-				x_img = x_img / 255
 				x_img = x_img * 1400
 				x_img = x_img.astype(np.uint16)
 				x_img = cv2.resize (x_img, (resized_width, resized_height), interpolation=cv2.INTER_LINEAR )
 				x_img = x_img.astype(np.float32)
-				x_img = x_img * 255
 				x_img = x_img / 1400
+				
+				# npy data is from 0 to 1, add this if you are using pre-trained weight on ImageNet
+				if C.Imagenet_pretrained:
+					x_img = x_img * 255
+				
+				assert(x_img.dtype == np.float32)
 
 				try:
 					y_rpn_cls, y_rpn_regr = calc_rpn(C, img_data_aug, width, height, resized_width, resized_height, img_length_calc_function)

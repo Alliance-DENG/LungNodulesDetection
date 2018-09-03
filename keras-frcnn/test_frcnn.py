@@ -27,12 +27,16 @@ parser.add_option("--config_filename", dest="config_filename", help=
 parser.add_option("--network", dest="network", help="Base network to use. Supports vgg or resnet50.", default='resnet50')
 parser.add_option("--param", dest="param_filename", help="Please specific the file of CT parameter to use", default='parameter_for_CTs.dict')
 parser.add_option("--ReadFormMHD", dest="mhd_flag", help="Read image or mhd file", default=False)
+parser.add_option("--Imagenet_pretrained", dest="Imagenet_pretrained", help="It is use Imagenet pre-trained weights as basebone network", default=False)
+parser.add_option("--skip", dest="skip", help="detect one slice out of three", default=True)
 
 
+
+def str_to_bool(str):
+    return True if str.lower() == 'true' else False
 
 (options, args) = parser.parse_args()
 
-options.mhd_flag = bool(options.mhd_flag)
 
 if not options.test_path:   # if filename is not given
 	parser.error('Error: path to test data must be specified. Pass --path to command line')
@@ -43,13 +47,21 @@ config_output_filename = options.config_filename
 with open(config_output_filename, 'rb') as f_in:
 	C = pickle.load(f_in)
 
+options.mhd_flag = str_to_bool(options.mhd_flag)
+if 'Imagenet_pretrained' in C.__dict__:
+	options.Imagenet_pretrained = C.Imagenet_pretrained
+else:
+	options.Imagenet_pretrained = str_to_bool(options.Imagenet_pretrained)
+
 # load the CT parameter for voxel2world transformation
 CT_parameter_filename = options.param_filename
 
 with open(CT_parameter_filename, 'rb') as f_in:
 	CT_parameter = pickle.load(f_in)
-
-submission_fd = open('result.csv', 'w')
+resultname = options.config_filename
+if options.skip:
+	resultname += '_skip'
+submission_fd = open(resultname + '_result.csv', 'w')
 submission_fd.write('seriesuid,coordX,coordY,coordZ,probability\n')
 
 
@@ -82,7 +94,17 @@ def format_img_size(img, C):
 		new_height = int(img_min_side)
 	if options.mhd_flag:	
 		# float32 may excess in cubic interpolation
-		img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+		#img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_LINEAR)
+		
+		img = img / 255
+		img = img * 1400
+		img = img.astype(np.uint16)
+		img = cv2.resize (img, (new_width, new_height), interpolation=cv2.INTER_LINEAR )
+		img = img.astype(np.float32)
+		img = img * 255
+		img = img / 1400
+		assert(img.dtype == np.float32)
+		
 	else:
 		img = cv2.resize(img, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
 	return img, ratio	
@@ -91,10 +113,12 @@ def format_img_channels(img, C):
 	""" formats the image channels based on config """
 	img = img[:, :, (2, 1, 0)]
 	img = img.astype(np.float32)
-	img[:, :, 0] -= C.img_channel_mean[0]
-	img[:, :, 1] -= C.img_channel_mean[1]
-	img[:, :, 2] -= C.img_channel_mean[2]
-	img /= C.img_scaling_factor
+	if 'Imagenet_pretrained' in C.__dict__:
+		if C.Imagenet_pretrained == True and C.network != 'alexnet3':
+			img[:, :, 0] -= C.img_channel_mean[0]
+			img[:, :, 1] -= C.img_channel_mean[1]
+			img[:, :, 2] -= C.img_channel_mean[2]
+			img /= C.img_scaling_factor
 	img = np.transpose(img, (2, 0, 1))
 	img = np.expand_dims(img, axis=0)
 	return img
@@ -198,6 +222,8 @@ model_classifier.load_weights(C.model_path, by_name=True)
 
 model_rpn.compile(optimizer='sgd', loss='mse')
 model_classifier.compile(optimizer='sgd', loss='mse')
+model_classifier_only.compile(optimizer='sgd', loss='mse')
+
 
 all_imgs = []
 
@@ -233,14 +259,16 @@ for idx, img_name in enumerate(sorted(os.listdir(img_path))):
 	i_skip = 0
 	for iii in range(slice_nums):
 		i_skip += 1
-		if i_skip % 3 != 0:
+		if str_to_bool(options.skip) and i_skip % 3 != 0:
 			continue
 			
 		if options.mhd_flag:
 			img = CT_array[iii,:,:]
 			img = normalizePlanes(img)
-			# multipy it by 255 to ensure taking the same data process as the training and the pretrain model
-			img = img * 255
+			# you should multiply 255 if you trained on ImageNet pre-trained weight 
+			# for feature extraction, to get close to Imagenet data range
+			if options.Imagenet_pretrained:
+				img = img* 255
 			img = img.astype(np.float32)
 			img = np.stack((img,)*3, -1)
 		

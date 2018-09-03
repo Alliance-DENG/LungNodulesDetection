@@ -35,6 +35,10 @@ parser.add_option("--config_filename", dest="config_filename", help=
 				default="config.pickle")
 parser.add_option("--output_weight_path", dest="output_weight_path", help="Output path for weights.", default='./model_frcnn.hdf5')
 parser.add_option("--input_weight_path", dest="input_weight_path", help="Input path for weights. If not specified, will try to load default weights provided by keras.")
+parser.add_option("--Imagenet_pretrained", dest="Imagenet_pretrained", help="It is use Imagenet pre-trained weights as basebone network", default=False)
+
+def str_to_bool(str):
+    return True if str.lower() == 'true' else False
 
 (options, args) = parser.parse_args()
 
@@ -55,7 +59,7 @@ C = config.Config()
 options.output_weight_path = './model_stride{}_epoch{}_{}.hdf5'.format(C.rpn_stride, options.num_epochs, time.strftime("%m%d-%H-%M"))
 options.config_filename = 'config_{}.pickle'.format(time.strftime("%m%d-%H-%M"))
 
-
+C.Imagenet_pretrained = str_to_bool(options.Imagenet_pretrained)
 C.use_horizontal_flips = bool(options.horizontal_flips)
 C.use_vertical_flips = bool(options.vertical_flips)
 C.rot_90 = bool(options.rot_90)
@@ -167,13 +171,17 @@ print('Starting training')
 
 vis = True
 
-losses_all = np.zeros((epoch_length, 5, num_epochs))
+# record the max overlap also
+losses_all = np.zeros((epoch_length, 5+1, num_epochs))
 
-for epoch_num in range(num_epochs):
+for epoch_num in range(1, num_epochs+1):
 
 	progbar = generic_utils.Progbar(epoch_length)
-	print('Epoch {}/{}'.format(epoch_num + 1, num_epochs))
+	print('Epoch {}/{}'.format(epoch_num, num_epochs))
 
+	if epoch_num % 20 == 0:
+		model_all.save_weights(C.model_path + '_{}'.format(epoch_num))
+		
 	while True:
 		try:
 
@@ -251,10 +259,11 @@ for epoch_num in range(num_epochs):
 			progbar.update(iter_num, [('rpn_cls', np.mean(losses[:iter_num, 0])), ('rpn_regr', np.mean(losses[:iter_num, 1])),
 									  ('detector_cls', np.mean(losses[:iter_num, 2])), ('detector_regr', np.mean(losses[:iter_num, 3]))])
 
-			if iter_num == epoch_length:	
-				# save the losses
-				losses_all[: ,: ,epoch_num] = losses
-				np.save(C.model_path+'.loss.npy', losses_all)
+			if iter_num == epoch_length:		
+				# save config at the first epoch
+				if best_loss == np.Inf:
+					with open(config_output_filename, 'wb') as config_f:
+						pickle.dump(C,config_f)
 				
 				loss_rpn_cls = np.mean(losses[:, 0])
 				loss_rpn_regr = np.mean(losses[:, 1])
@@ -264,6 +273,11 @@ for epoch_num in range(num_epochs):
 
 				mean_overlapping_bboxes = float(sum(rpn_accuracy_for_epoch)) / len(rpn_accuracy_for_epoch)
 				rpn_accuracy_for_epoch = []
+				
+				# save the losses during each epoch
+				losses_all[: , 0:5 ,epoch_num-1] = losses
+				losses_all[0 , 5, epoch_num-1] = mean_overlapping_bboxes
+				np.save(C.model_path+'.loss.npy', losses_all)
 
 				if C.verbose:
 					print('Mean number of bounding boxes from RPN overlapping ground truth boxes: {}'.format(mean_overlapping_bboxes))
@@ -279,10 +293,6 @@ for epoch_num in range(num_epochs):
 				start_time = time.time()
 
 				if curr_loss < best_loss:	
-					if best_loss == np.Inf:
-						with open(config_output_filename, 'wb') as config_f:
-							pickle.dump(C,config_f)
-							print('Config has been written to {}, and can be loaded when testing to ensure correct results'.format(config_output_filename))
 					if C.verbose:
 						print('Total loss decreased from {} to {}, saving weights'.format(best_loss,curr_loss))
 					best_loss = curr_loss
