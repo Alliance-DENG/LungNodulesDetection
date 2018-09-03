@@ -3,7 +3,7 @@ import keras.backend as K
 
 if K.backend() == 'tensorflow':
     import tensorflow as tf
-
+# 继承自keras的layer
 class RoiPoolingConv(Layer):
     '''ROI pooling layer for 2D inputs.
     See Spatial Pyramid Pooling in Deep Convolutional Networks for Visual Recognition,
@@ -33,13 +33,13 @@ class RoiPoolingConv(Layer):
         self.num_rois = num_rois
 		# 调用父类layer的init, 构建自定义的层
         super(RoiPoolingConv, self).__init__(**kwargs)
-
+	# 得到特征图的输出通道个数
     def build(self, input_shape):
         if self.dim_ordering == 'th':
             self.nb_channels = input_shape[0][1]
         elif self.dim_ordering == 'tf':
             self.nb_channels = input_shape[0][3]
-
+	# 计算输出特征图的形状
     def compute_output_shape(self, input_shape):
         if self.dim_ordering == 'th':
             return None, self.num_rois, self.nb_channels, self.pool_size, self.pool_size
@@ -71,7 +71,9 @@ class RoiPoolingConv(Layer):
 
             #NOTE: the RoiPooling implementation differs between theano and tensorflow due to the lack of a resize op
             # in theano. The theano implementation is much less efficient and leads to long compile times
-
+			# 遍历提供的所有预选框
+			# 将预选宽里的特征图规整到指定大小
+			# 加入到outputs
             if self.dim_ordering == 'th':
                 for jy in range(num_pool_regions):
                     for ix in range(num_pool_regions):
@@ -104,7 +106,7 @@ class RoiPoolingConv(Layer):
 
                 rs = tf.image.resize_images(img[:, y:y+h, x:x+w, :], (self.pool_size, self.pool_size))
                 outputs.append(rs)
-
+		# K.concatenate:将outputs里面的变量按照第一个维度合在一起
         final_output = K.concatenate(outputs, axis=0)
         final_output = K.reshape(final_output, (1, self.num_rois, self.pool_size, self.pool_size, self.nb_channels))
 

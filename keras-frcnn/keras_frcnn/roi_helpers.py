@@ -283,7 +283,7 @@ def rpn_to_roi(rpn_layer, regr_layer, C, dim_ordering, use_regr=True, max_boxes=
 	y1 = all_boxes[:, 1]
 	x2 = all_boxes[:, 2]
 	y2 = all_boxes[:, 3]
-
+	# 删除掉一些不合理的点，即右下角的点值要小于左上角的点值
 	idxs = np.where((x1 - x2 >= 0) | (y1 - y2 >= 0))
 
 	all_boxes = np.delete(all_boxes, idxs, 0)

@@ -88,8 +88,9 @@ def nn_base(input_tensor=None, trainable=False):
 def rpn(base_layers, num_anchors):
 
     x = Conv2D(512, (3, 3), padding='same', activation='relu', kernel_initializer='normal', name='rpn_conv1')(base_layers)
-
+	# x_class:每一个锚点属于前景还是背景 注：这里使用的是sigmoid激活函数所以其输出的通道数是num_anchors
     x_class = Conv2D(num_anchors, (1, 1), activation='sigmoid', kernel_initializer='uniform', name='rpn_out_class')(x)
+    # x_regr：每一个锚点对应的回归梯度
     x_regr = Conv2D(num_anchors * 4, (1, 1), activation='linear', kernel_initializer='zero', name='rpn_out_regress')(x)
 
     return [x_class, x_regr, base_layers]
@@ -105,15 +106,18 @@ def classifier(base_layers, input_rois, num_rois, nb_classes = 21, trainable=Fal
     elif K.backend() == 'theano':
         pooling_regions = 7
         input_shape = (num_rois,512,7,7)
-
+	# RoiPoolingConv返回的shape为(1, 32, 7, 7, 512)含义是batch_size,预选框的个数，特征图宽，特征图高度，特征图深度
     out_roi_pool = RoiPoolingConv(pooling_regions, num_rois)([base_layers, input_rois])
-
+	# TimeDistributed：输入至少为3D张量，
+	# 下标为1的维度将被认为是时间维。
+	# 即对以一个维度下的变量当作一个完整变量来看待
+	# 你要实现的目的就是对32个预选宽提出的32个图片做出判断。
     out = TimeDistributed(Flatten(name='flatten'))(out_roi_pool)
     out = TimeDistributed(Dense(4096, activation='relu', name='fc1'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
     out = TimeDistributed(Dense(4096, activation='relu', name='fc2'))(out)
     out = TimeDistributed(Dropout(0.5))(out)
-
+	# out_class的shape:(?, 32, nb_classes);out_regr的shape:(?, 32, 4 * (nb_classes-1))
     out_class = TimeDistributed(Dense(nb_classes, activation='softmax', kernel_initializer='zero'), name='dense_class_{}'.format(nb_classes))(out)
     # note: no regression target for bg class
     out_regr = TimeDistributed(Dense(4 * (nb_classes-1), activation='linear', kernel_initializer='zero'), name='dense_regress_{}'.format(nb_classes))(out)
