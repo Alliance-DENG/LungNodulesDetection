@@ -118,6 +118,7 @@ def computeFROC_bootstrap(FROCGTList,FROCProbList,FPDivisorList,FROCImList,exclu
 
 def computeFROC(FROCGTList, FROCProbList, totalNumberOfImages, excludeList):
     # Remove excluded candidates
+    # excludeList为没有GT有而没检出的nodule, 相当于FN
     FROCGTList_local = []
     FROCProbList_local = []
     for i in range(len(excludeList)):
@@ -128,6 +129,7 @@ def computeFROC(FROCGTList, FROCProbList, totalNumberOfImages, excludeList):
     numberOfDetectedLesions = sum(FROCGTList_local)
     totalNumberOfLesions = sum(FROCGTList)
     totalNumberOfCandidates = len(FROCProbList_local)
+    # fps tps率根据fpr, tpr计算, FROC的计算核心在此
     fpr, tpr, thresholds = skl_metrics.roc_curve(FROCGTList_local, FROCProbList_local)
     if sum(FROCGTList) == len(FROCGTList): # Handle border case when there are no false positives and ROC analysis give nan values.
       print("WARNING, this system has no false positives..")
@@ -137,7 +139,7 @@ def computeFROC(FROCGTList, FROCProbList, totalNumberOfImages, excludeList):
     sens = (tpr * numberOfDetectedLesions) / totalNumberOfLesions
     return fps, sens, thresholds
 
-def evaluateCAD(seriesUIDs, results_filename, outputDir, allNodules, CADSystemName, maxNumberOfCADMarks=-1,
+def evaluateCAD(seriesUIDs, results_filename, outputDir, allNodules, CADSystemName, minimum_prob, maxNumberOfCADMarks=-1,
                 performBootstrapping=False,numberOfBootstrapSamples=1000,confidence = 0.95):
     '''
     function to evaluate a CAD algorithm
@@ -171,6 +173,9 @@ def evaluateCAD(seriesUIDs, results_filename, outputDir, allNodules, CADSystemNa
             
             if seriesuid == nodule_seriesuid:
                 nodule = getNodule(result, header)
+				# sort those probabilities > minimum_prob
+                if float(nodule.CADprobability) < minimum_prob:
+                    continue
                 nodule.candidateID = i
                 nodules[nodule.candidateID] = nodule
                 i += 1
@@ -183,8 +188,9 @@ def evaluateCAD(seriesUIDs, results_filename, outputDir, allNodules, CADSystemNa
                 probs = []
                 for keytemp, noduletemp in nodules.items():
                     probs.append(float(noduletemp.CADprobability))
-                probs.sort(reverse=True) # sort from large to small
+                #probs.sort(reverse=True) # sort from large to small
                 probThreshold = probs[maxNumberOfCADMarks]
+                #probThreshold = minimum_prob
                 nodules2 = {}
                 nrNodules2 = 0
                 for keytemp, noduletemp in nodules.items():
@@ -479,7 +485,7 @@ def collect(annotations_filename,annotations_excluded_filename,seriesuids_filena
     return (allNodules, seriesUIDs)
     
     
-def noduleCADEvaluation(annotations_filename,annotations_excluded_filename,seriesuids_filename,results_filename,outputDir):
+def noduleCADEvaluation(annotations_filename,annotations_excluded_filename,seriesuids_filename,results_filename,outputDir,minimum_prob):
     '''
     function to load annotations and evaluate a CAD algorithm
     @param annotations_filename: list of annotations
@@ -492,20 +498,21 @@ def noduleCADEvaluation(annotations_filename,annotations_excluded_filename,serie
     print(annotations_filename)
     
     (allNodules, seriesUIDs) = collect(annotations_filename, annotations_excluded_filename, seriesuids_filename)
-    
+    # maxNumberOfCADMarks是每个series号最多能有多少个bbox被分析
     evaluateCAD(seriesUIDs, results_filename, outputDir, allNodules,
-                os.path.splitext(os.path.basename(results_filename))[0],
+                os.path.splitext(os.path.basename(results_filename))[0], minimum_prob,
                 maxNumberOfCADMarks=100, performBootstrapping=bPerformBootstrapping,
                 numberOfBootstrapSamples=bNumberOfBootstrapSamples, confidence=bConfidence)
 
 
 if __name__ == '__main__':
 
-    annotations_filename          = sys.argv[1]
-    annotations_excluded_filename = sys.argv[2]
-    seriesuids_filename           = sys.argv[3]
-    results_filename              = sys.argv[4]
-    outputDir                     = sys.argv[5]
+    minimum_prob                  = float(sys.argv[1])
+    results_filename              = sys.argv[2]
+    outputDir                     = sys.argv[3]
+    annotations_filename          = sys.argv[4]
+    annotations_excluded_filename = sys.argv[5]
+    seriesuids_filename           = sys.argv[6]
     # execute only if run as a script
-    noduleCADEvaluation(annotations_filename,annotations_excluded_filename,seriesuids_filename,results_filename,outputDir)
+    noduleCADEvaluation(annotations_filename,annotations_excluded_filename,seriesuids_filename,results_filename,outputDir,minimum_prob)
     print("Finished!")
