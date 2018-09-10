@@ -1,3 +1,6 @@
+#Lia想看有gt框而没被预测出的图片,
+#下面是我的做法, 先保存所有有结点的原图. 再读gt文件, 找到对应的图加框
+
 import SimpleITK as sitk
 import numpy as np
 from glob import glob
@@ -42,15 +45,15 @@ def parse_filename(filename):
     return filename[int(i+1) :]
 
 if __name__ == "__main__":
-    data_path = "/home/guest/alliance/LUNA16/"
-    gt_path = "/home/guest/alliance/LUNA16/CSVFILES/"
-    bbox_path = "/home/guest/alliance/LUNA16/training_set/"
+    data_path = "/home/grains2/alliance/DATA/"
+    gt_path = "/home/grains2/alliance/FN_subset9/"
+    bbox_path = "./gt_subset9/"
 
     with open(bbox_path+'bbox.txt', 'w') as f:
 
         # read all the mhd file into a list (with abslute path)
         file_list = []
-        for i in range(9):
+        for i in range(9,10):
             file_list += glob(data_path + 'subset%s/*.mhd' % i)
         print("num of files:%d" % len(file_list))
 
@@ -86,28 +89,12 @@ if __name__ == "__main__":
                 if not i_z in slice_dict:
                     slice_dict.append(i_z)
                     tmp = normalizePlanes(CT_array[int(i_z),:,:])
-                    tmp = tmp.astype(np.float32)
-                    np.save(bbox_path + name + '_' + str(i_z), tmp)
-                    #tmp = tmp.astype(np.uint8)
-                    #cv2.imwrite('{}{}_{}.png'.format(bbox_path, name, i_z), tmp)
-                file_path = bbox_path + name + '_' + str(i_z)
-                f.write('{}.npy,{},{},{},{},{}\n'.format(file_path, x1, y1, x2, y2, 'positive'))
-                
-                del CT_array, origin, spacing
-
-            del sorted_df
+                    tmp *= 255
+                    tmp = tmp.astype(np.uint8)
+                    cv2.imwrite('{}{}_{}.png'.format('./gt_subset9/', name, int(i_z), tmp)
+                #del CT_array, origin, spacing
+                #file_path = bbox_path + name + '_' + str(i_z)
+                #f.write('{}.npy,{},{},{},{},{}\n'.format(file_path, x1, y1, x2, y2, 'positive'))
 
 
-
-
-
-
-
-
-   
-                
-                
-
-
-
-
+            #del sorted_df
